@@ -1,0 +1,32 @@
+# Generated files
+/target/
+/debug/
+/release/
+
+# Remove Cargo.lock from gitignore if creating an executable, leave it for libraries
+# More information here https://doc.rust-lang.org/cargo/guide/cargo-toml-vs-cargo-lock.html
+Cargo.lock
+
+# IDE specific files
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Backup files
+*.rs.bk
+
+# Debug symbols
+*.pdb
+
+# Environment variables
+.env
+.env.local
+
+# Optional: if you're using nightly features
+rust-toolchain
+
+# Optional: if you're using coverage tools
+*.profraw
+coverage/
