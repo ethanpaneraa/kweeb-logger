@@ -32,15 +32,13 @@ var isMenuInitialized = false
 func main() {
     log.Println("Starting Go application...")
 
-    // Remove any existing socket file
     if err := os.Remove(sockAddr); err != nil && !os.IsNotExist(err) {
         log.Fatalf("Failed to remove existing socket file: %v", err)
     }
 
-    // Start systray
     log.Println("Starting systray...")
-    go startSocketListener() // Run socket listener in a goroutine
-    systray.Run(onReady, onExit) // This starts the systray and blocks until exit
+    go startSocketListener() 
+    systray.Run(onReady, onExit) 
 }
 
 func startSocketListener() {
@@ -117,7 +115,6 @@ func onReady() {
 		systray.Quit()
 	}()
 
-	// Mark menu as initialized
 	isMenuInitialized = true
 	log.Println("systray.OnReady completed")
 }

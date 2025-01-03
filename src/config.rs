@@ -41,7 +41,6 @@ impl Config {
             }
         }
 
-        // Default configuration
         Ok(Config {
             database: DBConfig {
                 db_type: "sqlite".to_string(),
@@ -61,7 +60,6 @@ impl Config {
             .map(|proj_dirs| proj_dirs.config_dir().join("config.yaml"))
     }
 
-    // Helper method to check if Supabase is properly configured
     pub fn has_supabase_config(&self) -> bool {
         self.supabase.enabled && 
         self.supabase.url.is_some() && 
