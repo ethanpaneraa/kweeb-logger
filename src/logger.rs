@@ -2,6 +2,7 @@ use anyhow::Context;
 use directories::ProjectDirs;
 use std::fs::OpenOptions;
 
+#[allow(dead_code)]
 pub fn setup_logging() -> anyhow::Result<()> {
     let proj_dirs = ProjectDirs::from("com", "kweeb-logger", "logger")
         .context("Failed to get project directories")?;

@@ -1,0 +1,16 @@
+2025/01/03 15:10:44 main.go:28: Go Version: go1.22.1
+2025/01/03 15:10:44 main.go:29: OS: darwin
+2025/01/03 15:10:44 main.go:30: Arch: arm64
+2025/01/03 15:10:44 main.go:54: Starting systray application
+2025/01/03 15:10:44 main.go:66: Systray onReady called
+2025/01/03 15:10:44 main.go:88: Starting menu interaction
+2025/01/03 15:10:54 main.go:93: Periodic log to keep application alive
+2025/01/03 15:11:04 main.go:93: Periodic log to keep application alive
+2025/01/03 15:11:43 main.go:28: Go Version: go1.22.1
+2025/01/03 15:11:43 main.go:29: OS: darwin
+2025/01/03 15:11:43 main.go:30: Arch: arm64
+2025/01/03 15:11:43 main.go:54: Starting systray application
+2025/01/03 15:11:44 main.go:66: Systray onReady called
+2025/01/03 15:11:44 main.go:88: Starting menu interaction
+2025/01/03 15:11:48 main.go:74: Quit requested
+2025/01/03 15:11:48 main.go:44: Application exiting at 2025-01-03 15:11:48.70158 -0600 CST m=+4.801205335

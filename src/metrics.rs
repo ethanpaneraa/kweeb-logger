@@ -1,4 +1,4 @@
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Metrics {
     pub keypresses: i32,
     pub mouse_clicks: i32,
@@ -17,7 +17,7 @@ impl Metrics {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct TotalMetrics {
     pub total_keypresses: i32,
     pub total_mouse_clicks: i32,

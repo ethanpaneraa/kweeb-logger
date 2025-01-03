@@ -22,7 +22,8 @@ display-info = "0.4.8"
 futures = "0.3.31"
 tao = { version = "0.20.0", features = ["tray"] }
 parking_lot = "0.12"
-
-
-[build]
-include = ["assets/*"]
+postgrest = "1.0"
+reqwest = { version = "0.11", features = ["json"] }
+serde_json = "1.0"
+uuid = { version = "1.7", features = ["v4"] }
+cocoa-foundation = "0.1.0"

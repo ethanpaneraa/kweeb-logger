@@ -7,6 +7,8 @@ use directories::ProjectDirs;
 #[derive(Debug, Deserialize, Default)]
 pub struct Config {
     pub database: DBConfig,
+    #[serde(default)]
+    pub supabase: SupabaseConfig,
 }
 
 #[allow(dead_code)]
@@ -16,6 +18,13 @@ pub struct DBConfig {
     pub db_type: String,
     pub url: Option<String>,
     pub filepath: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+pub struct SupabaseConfig {
+    pub enabled: bool,
+    pub url: Option<String>,
+    pub api_key: Option<String>,
 }
 
 impl Config {
@@ -32,11 +41,17 @@ impl Config {
             }
         }
 
+        // Default configuration
         Ok(Config {
             database: DBConfig {
                 db_type: "sqlite".to_string(),
                 url: None,
                 filepath: None,
+            },
+            supabase: SupabaseConfig {
+                enabled: false,
+                url: None,
+                api_key: None,
             },
         })
     }
@@ -44,5 +59,12 @@ impl Config {
     fn config_path() -> Option<PathBuf> {
         ProjectDirs::from("com", "kweeb-logger", "logger")
             .map(|proj_dirs| proj_dirs.config_dir().join("config.yaml"))
+    }
+
+    // Helper method to check if Supabase is properly configured
+    pub fn has_supabase_config(&self) -> bool {
+        self.supabase.enabled && 
+        self.supabase.url.is_some() && 
+        self.supabase.api_key.is_some()
     }
 }
