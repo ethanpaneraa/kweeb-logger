@@ -1,8 +1,8 @@
-// db.rs
 use anyhow::{Context, Result};
 use directories::ProjectDirs;
-use sqlx::sqlite::SqlitePool;
+use sqlx::{sqlite::SqlitePool, Row};  
 use std::path::PathBuf;
+use crate::metrics::TotalMetrics;
 
 pub struct Database {
     pool: SqlitePool,
@@ -45,6 +45,36 @@ impl Database {
 
         Ok(())
     }
+
+    pub async fn get_total_metrics(&self) -> Result<TotalMetrics> {
+        let row = sqlx::query(
+            r#"
+            SELECT 
+                COALESCE(SUM(keypresses), 0) as total_keypresses,
+                COALESCE(SUM(mouse_clicks), 0) as total_mouse_clicks,
+                COALESCE(SUM(mouse_distance_in), 0.0) as total_mouse_distance_in,
+                COALESCE(SUM(mouse_distance_mi), 0.0) as total_mouse_distance_mi,
+                COALESCE(SUM(scroll_steps), 0) as total_scroll_steps
+            FROM metrics
+            "#
+        )
+        .fetch_one(self.pool())
+        .await
+        .context("Failed to fetch total metrics")?;
+
+        Ok(TotalMetrics {
+            total_keypresses: row.try_get(0)
+                .context("Failed to get total_keypresses")?,
+            total_mouse_clicks: row.try_get(1)
+                .context("Failed to get total_mouse_clicks")?,
+            total_mouse_distance_in: row.try_get(2)
+                .context("Failed to get total_mouse_distance_in")?,
+            total_mouse_distance_mi: row.try_get(3)
+                .context("Failed to get total_mouse_distance_mi")?,
+            total_scroll_steps: row.try_get(4)
+                .context("Failed to get total_scroll_steps")?,
+        })
+    }
 }
 
 fn get_database_path() -> Result<PathBuf> {
@@ -63,7 +93,7 @@ async fn initialize_database(db_path: &PathBuf) -> Result<SqlitePool> {
         log::info!("Created new database file at {}", db_path.display());
     }
 
-    let db_url = format!("sqlite:{}", db_path.display());
+    let db_url = format!("sqlite:{}?mode=rwc", db_path.display());
     let pool = SqlitePool::connect(&db_url)
         .await
         .context("Failed to connect to database")?;

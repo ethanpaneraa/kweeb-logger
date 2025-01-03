@@ -3,11 +3,13 @@ use serde::Deserialize;
 use std::path::PathBuf;
 use directories::ProjectDirs;
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize, Default)]
 pub struct Config {
     pub database: DBConfig,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize, Default)]
 pub struct DBConfig {
     #[serde(default)]

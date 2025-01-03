@@ -5,12 +5,6 @@ use std::fmt;
 use std::collections::{BinaryHeap, HashMap};
 use std::cmp::Ordering;
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum MonitorOrientation {
-    Horizontal,
-    Vertical,
-}
-
 #[derive(Debug, Clone)]
 pub struct Monitor {
     pub x_pos: i32,
@@ -18,19 +12,14 @@ pub struct Monitor {
     pub width_px: i32,
     pub height_px: i32,
     pub ppi: f64,
-    pub primary: bool,
-    pub display_id: u32,
-    pub orientation: MonitorOrientation,
 }
 
 #[derive(Debug)]
 pub enum MonitorError {
     NoMonitorsFound,
     InvalidCoordinates,
-    SystemError(String),
 }
 
-// A* pathfinding structures
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 struct Point {
     x: i32,
@@ -57,7 +46,6 @@ impl fmt::Display for MonitorError {
         match self {
             MonitorError::NoMonitorsFound => write!(f, "No monitors found"),
             MonitorError::InvalidCoordinates => write!(f, "Invalid coordinates"),
-            MonitorError::SystemError(msg) => write!(f, "System error: {}", msg),
         }
     }
 }
@@ -65,27 +53,15 @@ impl fmt::Display for MonitorError {
 impl Monitor {
     fn new(display: CGDisplay) -> Result<Self, MonitorError> {
         let bounds = display.bounds();
-        
-        let width = bounds.size.width as i32;
-        let height = bounds.size.height as i32;
-        let orientation = if height > width {
-            MonitorOrientation::Vertical
-        } else {
-            MonitorOrientation::Horizontal
-        };
-        
         let scale_factor = display.pixels_high() as f64 / bounds.size.height;
         let ppi = 72.0 * scale_factor;
         
         Ok(Monitor {
             x_pos: bounds.origin.x as i32,
             y_pos: bounds.origin.y as i32,
-            width_px: width,
-            height_px: height,
+            width_px: bounds.size.width as i32,
+            height_px: bounds.size.height as i32,
             ppi,
-            primary: display.is_main(),
-            display_id: display.unit_number(),
-            orientation,
         })
     }
 
@@ -117,24 +93,6 @@ fn manhattan_distance(x1: i32, y1: i32, x2: i32, y2: i32) -> i32 {
     (x2 - x1).abs() + (y2 - y1).abs()
 }
 
-fn are_monitors_adjacent(m1: &Monitor, m2: &Monitor) -> bool {
-    const ALIGNMENT_TOLERANCE: i32 = 5; 
-
-    let x_overlap = m1.x_pos - ALIGNMENT_TOLERANCE < m2.x_pos + m2.width_px 
-        && m2.x_pos - ALIGNMENT_TOLERANCE < m1.x_pos + m1.width_px;
-    let y_overlap = m1.y_pos - ALIGNMENT_TOLERANCE < m2.y_pos + m2.height_px 
-        && m2.y_pos - ALIGNMENT_TOLERANCE < m1.y_pos + m1.height_px;
-    
-    (x_overlap && (
-        (m1.y_pos - m2.y_pos - m2.height_px).abs() <= ALIGNMENT_TOLERANCE ||
-        (m2.y_pos - m1.y_pos - m1.height_px).abs() <= ALIGNMENT_TOLERANCE
-    )) ||
-    (y_overlap && (
-        (m1.x_pos - m2.x_pos - m2.width_px).abs() <= ALIGNMENT_TOLERANCE ||
-        (m2.x_pos - m1.x_pos - m1.width_px).abs() <= ALIGNMENT_TOLERANCE
-    ))
-}
-
 fn find_optimal_path(
     start_x: i32,
     start_y: i32,
@@ -164,8 +122,7 @@ fn find_optimal_path(
         }
 
         let current_g = *g_score.get(&(current.x, current.y)).unwrap_or(&i32::MAX);
-
-        // Generate neighbors (transition points that are visible from current point)
+        
         for &(next_x, next_y) in &transition_points {
             if is_valid_movement(current.x, current.y, next_x, next_y, monitors) {
                 let tentative_g = current_g + manhattan_distance(current.x, current.y, next_x, next_y);
@@ -258,7 +215,7 @@ pub fn calculate_multi_monitor_distance(
 
 pub fn get_monitors() -> Result<Vec<Monitor>> {
     let displays = CGDisplay::active_displays()
-        .map_err(|e| anyhow!("Failed to get displays: {:?}", e))?;
+        .map_err(|_| anyhow!("Failed to get displays"))?;
         
     if displays.is_empty() {
         return Err(MonitorError::NoMonitorsFound.into());

@@ -6,6 +6,7 @@ use std::{
 };
 use tokio::sync::Mutex;
 use tray_item::TrayItem;
+use crate::monitor::Monitor;
 
 mod config;
 mod db;
@@ -19,13 +20,14 @@ use crate::{
     config::Config,
     db::Database,
     metrics::{Metrics, TotalMetrics},
-    monitor::calculate_distance,
+    monitor::{get_monitors, calculate_multi_monitor_distance},
     scroll::ScrollTracker,
 };
 
 pub struct AppState {
     metrics: Mutex<Metrics>,
     total_metrics: Mutex<TotalMetrics>,
+    monitors: Mutex<Vec<Monitor>>,
     last_mouse_pos: Mutex<(i32, i32)>,
     db: Arc<Database>,
 }
@@ -42,11 +44,23 @@ async fn main() -> anyhow::Result<()> {
     let db = Arc::new(database);
     log::info!("Database initialized");
 
+    let total_metrics = db.get_total_metrics().await?;
+    log::info!("Loaded total metrics from database");
+
+    
+
+    let monitors = get_monitors().unwrap_or_default();
     let state = Arc::new(AppState {
         metrics: Mutex::new(Metrics::default()),
-        total_metrics: Mutex::new(TotalMetrics::default()),
+        total_metrics: Mutex::new(total_metrics),
+        monitors: Mutex::new(monitors),
         last_mouse_pos: Mutex::new((0, 0)),
         db,
+    });
+
+    let monitor_state = Arc::clone(&state);
+    tokio::spawn(async move {
+        refresh_monitors_periodically(monitor_state).await;
     });
 
     let mut tray = TrayItem::new("kweeb-logger", "kweeb-logger-tray")?;
@@ -113,23 +127,24 @@ async fn collect_metrics(
             let mut metrics = state.metrics.lock().await;
             let mut total = state.total_metrics.lock().await;
             let mut last_pos = state.last_mouse_pos.lock().await;
-
-            let distance = calculate_distance(
+            let monitors = state.monitors.lock().await;
+        
+            if let Ok(distance) = calculate_multi_monitor_distance(
                 last_pos.0,
                 last_pos.1,
                 current_mouse.coords.0,
                 current_mouse.coords.1,
-            );
-
-            metrics.mouse_distance_in += distance;
-            metrics.mouse_distance_mi += distance / 63360.0;
-            total.total_mouse_distance_in += distance;
-            total.total_mouse_distance_mi += distance / 63360.0;
-
+                &monitors,
+            ) {
+                metrics.mouse_distance_in += distance;
+                metrics.mouse_distance_mi += distance / 63360.0;
+                total.total_mouse_distance_in += distance;
+                total.total_mouse_distance_mi += distance / 63360.0;
+            }
+        
             *last_pos = current_mouse.coords;
         }
 
-        // Handle mouse clicks
         if current_mouse.button_pressed.iter().zip(last_mouse.button_pressed.iter())
             .any(|(&current, &last)| current && !last) {
             let mut metrics = state.metrics.lock().await;
@@ -164,5 +179,14 @@ async fn save_metrics_periodically(state: Arc<AppState>) {
 
         drop(metrics); 
         state.metrics.lock().await.reset();
+    }
+}
+
+async fn refresh_monitors_periodically(state: Arc<AppState>) {
+    loop {
+        tokio::time::sleep(Duration::from_secs(30)).await;
+        if let Ok(new_monitors) = get_monitors() {
+            *state.monitors.lock().await = new_monitors;
+        }
     }
 }
