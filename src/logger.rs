@@ -19,7 +19,7 @@ pub fn setup_logging() -> anyhow::Result<()> {
 
     env_logger::Builder::new()
         .target(env_logger::Target::Pipe(Box::new(file)))
-        .filter_level(log::LevelFilter::Info)
+        .filter_level(log::LevelFilter::Debug)
         .init();
     
     log::info!("Logging initialized at {}", log_file.display());

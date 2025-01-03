@@ -92,7 +92,7 @@ async fn initialize_database(db_path: &PathBuf) -> Result<SqlitePool> {
         std::fs::File::create(db_path)?;
         log::info!("Created new database file at {}", db_path.display());
     }
-
+    log::debug!("Using existing database at {}", db_path.display());
     let db_url = format!("sqlite:{}?mode=rwc", db_path.display());
     let pool = SqlitePool::connect(&db_url)
         .await
