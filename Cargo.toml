@@ -16,3 +16,7 @@ env_logger = "0.10"
 anyhow = "1.0"
 chrono = "0.4"
 sqlx = { version = "0.7", features = ["runtime-tokio-native-tls", "sqlite", "chrono", "migrate"] }
+cocoa = "0.25"
+core-graphics = "0.23"
+objc = "0.2"
+display-info = "0.4.8"

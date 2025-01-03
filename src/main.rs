@@ -1,7 +1,5 @@
-use anyhow::{Context};
+use anyhow::Context;
 use device_query::{DeviceQuery, DeviceState};
-use directories::ProjectDirs;
-use sqlx::sqlite::SqlitePool;
 use std::{
     sync::{Arc, atomic::{AtomicBool, Ordering}},
     time::Duration,
@@ -13,40 +11,46 @@ mod config;
 mod db;
 mod metrics;
 mod monitor;
+mod scroll;
+mod logger;
+mod tray;
 
 use crate::{
     config::Config,
+    db::Database,
     metrics::{Metrics, TotalMetrics},
     monitor::calculate_distance,
+    scroll::ScrollTracker,
 };
 
 pub struct AppState {
     metrics: Mutex<Metrics>,
     total_metrics: Mutex<TotalMetrics>,
     last_mouse_pos: Mutex<(i32, i32)>,
-    db_pool: SqlitePool,
+    db: Arc<Database>,
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    setup_logging()?;
+    logger::setup_logging()?;
     log::info!("Starting kweeb-logger...");
 
     let _config = Config::load().context("Failed to load configuration")?;
     log::info!("Configuration loaded");
 
-    let db_pool = setup_database().await?;
+    let database = Database::new().await?;
+    let db = Arc::new(database);
     log::info!("Database initialized");
 
     let state = Arc::new(AppState {
         metrics: Mutex::new(Metrics::default()),
         total_metrics: Mutex::new(TotalMetrics::default()),
         last_mouse_pos: Mutex::new((0, 0)),
-        db_pool,
+        db,
     });
 
     let mut tray = TrayItem::new("kweeb-logger", "kweeb-logger-tray")?;
-    setup_tray(&mut tray, Arc::clone(&state))?;
+    tray::setup_tray(&mut tray, Arc::clone(&state))?;
     log::info!("System tray initialized");
 
     let device_state = DeviceState::new();
@@ -72,103 +76,6 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn setup_logging() -> anyhow::Result<()> {
-    let proj_dirs = ProjectDirs::from("com", "kweeb-logger", "logger")
-        .context("Failed to get project directories")?;
-    
-    let log_dir = proj_dirs.data_dir();
-    println!("Creating log directory at: {}", log_dir.display());
-    std::fs::create_dir_all(&log_dir)?;
-    
-    let log_file = log_dir.join("kweeb-logger.log");
-    println!("Log file will be at: {}", log_file.display());
-    let file = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&log_file)?;
-
-    env_logger::Builder::new()
-        .target(env_logger::Target::Pipe(Box::new(file)))
-        .filter_level(log::LevelFilter::Info)
-        .init();
-    
-    log::info!("Logging initialized at {}", log_file.display());
-    Ok(())
-}
-
-
-async fn setup_database() -> anyhow::Result<SqlitePool> {
-    let proj_dirs = ProjectDirs::from("com", "kweeb-logger", "logger")
-        .context("Failed to get project directories")?;
-
-    let data_dir = proj_dirs.data_dir();
-    println!("Creating data directory at: {}", data_dir.display());
-    std::fs::create_dir_all(&data_dir)?;
-
-    let db_path = data_dir.join("kweeb-logger.db");
-    println!("Database will be at: {}", db_path.display());
-
-    if !db_path.exists() {
-        std::fs::File::create(&db_path)?;
-        println!("Created new database file");
-    }
-
-    let db_url = format!("sqlite:{}", db_path.display());
-    println!("Connecting to database at: {}", db_url);
-
-    let pool = SqlitePool::connect(&db_url)
-        .await
-        .context("Failed to connect to database")?;
-
-    println!("Successfully connected to database");
-
-    sqlx::query(
-        r#"
-        CREATE TABLE IF NOT EXISTS metrics (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-            keypresses INTEGER,
-            mouse_clicks INTEGER,
-            mouse_distance_in REAL,
-            mouse_distance_mi REAL,
-            scroll_steps INTEGER
-        );
-        "#,
-    )
-    .execute(&pool)
-    .await
-    .context("Failed to create metrics table")?;
-
-    println!("Database schema initialized");
-    Ok(pool)
-}
-fn setup_tray(tray: &mut TrayItem, state: Arc<AppState>) -> anyhow::Result<()> {
-    tray.add_menu_item("Kweeb Logger", Box::new(|| ()))?;
-    tray.add_menu_item("", Box::new(|| ()))?; 
-    tray.add_menu_item("Quit", Box::new(|| {
-        println!("Quitting...");
-        std::process::exit(0);
-    }))?;
-
-    let state_clone = Arc::clone(&state);
-    tokio::spawn(async move {
-        loop {
-            tokio::time::sleep(Duration::from_secs(1)).await;
-            let total = state_clone.total_metrics.lock().await;
-            
-            log::info!(
-                "Stats - Keypresses: {}, Clicks: {}, Distance: {:.2}mi, Scrolls: {}", 
-                total.total_keypresses,
-                total.total_mouse_clicks,
-                total.total_mouse_distance_mi,
-                total.total_scroll_steps
-            );
-        }
-    });
-
-    Ok(())
-}
-
 async fn collect_metrics(
     state: Arc<AppState>,
     device_state: DeviceState,
@@ -176,6 +83,7 @@ async fn collect_metrics(
 ) {
     let mut last_keys = device_state.get_keys();
     let mut last_mouse = device_state.get_mouse();
+    let mut scroll_tracker = ScrollTracker::new();
 
     while running.load(Ordering::SeqCst) {
         let current_keys = device_state.get_keys();
@@ -192,7 +100,16 @@ async fn collect_metrics(
         }
 
         let current_mouse = device_state.get_mouse();
-        if current_mouse != last_mouse {
+
+        let scroll_delta = scroll_tracker.get_scroll_delta();
+        if scroll_delta > 0 {
+            let mut metrics = state.metrics.lock().await;
+            let mut total = state.total_metrics.lock().await;
+            metrics.scroll_steps += scroll_delta;
+            total.total_scroll_steps += scroll_delta;
+        }
+
+        if current_mouse.coords != last_mouse.coords {
             let mut metrics = state.metrics.lock().await;
             let mut total = state.total_metrics.lock().await;
             let mut last_pos = state.last_mouse_pos.lock().await;
@@ -212,7 +129,9 @@ async fn collect_metrics(
             *last_pos = current_mouse.coords;
         }
 
-        if current_mouse.button_pressed != last_mouse.button_pressed {
+        // Handle mouse clicks
+        if current_mouse.button_pressed.iter().zip(last_mouse.button_pressed.iter())
+            .any(|(&current, &last)| current && !last) {
             let mut metrics = state.metrics.lock().await;
             let mut total = state.total_metrics.lock().await;
             metrics.mouse_clicks += 1;
@@ -230,33 +149,20 @@ async fn save_metrics_periodically(state: Arc<AppState>) {
     loop {
         tokio::time::sleep(Duration::from_secs(60)).await;
 
-        let mut metrics = state.metrics.lock().await;
+        let metrics = state.metrics.lock().await;
         
-        if let Err(e) = sqlx::query(
-            r#"
-            INSERT INTO metrics 
-            (keypresses, mouse_clicks, mouse_distance_in, mouse_distance_mi, scroll_steps)
-            VALUES ($1, $2, $3, $4, $5)
-            "#,
-        )
-        .bind(metrics.keypresses)
-        .bind(metrics.mouse_clicks)
-        .bind(metrics.mouse_distance_in)
-        .bind(metrics.mouse_distance_mi)
-        .bind(metrics.scroll_steps)
-        .execute(&state.db_pool)
-        .await
-        {
+        if let Err(e) = state.db.insert_metrics(
+            metrics.keypresses,
+            metrics.mouse_clicks,
+            metrics.mouse_distance_in,
+            metrics.mouse_distance_mi,
+            metrics.scroll_steps
+        ).await {
             log::error!("Failed to save metrics: {}", e);
             continue;
         }
 
-        metrics.reset();
+        drop(metrics); 
+        state.metrics.lock().await.reset();
     }
 }
-
-
-
-
-
-
