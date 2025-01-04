@@ -20,10 +20,10 @@ impl ScrollTracker {
         let delta = (current_y - self.last_mouse_y).abs();
         self.last_mouse_y = current_y;
         
-        if delta > 0 {
-            delta / 2
+        if delta > 15 { 
+            1
         } else {
-            0
+            0  
         }
     }
 }

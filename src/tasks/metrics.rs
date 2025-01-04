@@ -7,12 +7,16 @@ use crate::scroll::ScrollTracker;
 use crate::app::AppState;
 use crate::supabase::SupabaseClient;
 use crate::supabase;
+use std::collections::HashSet;
 
 pub async fn save_metrics_with_updates(
     state: Arc<AppState>,
     supabase: Option<Arc<SupabaseClient>>
 ) {
-    let device_id = uuid::Uuid::new_v4().to_string();
+    // Generate a device ID once at startup
+    let device_id = get_or_create_device_id();
+    log::info!("Starting metrics save loop with device_id: {}", device_id);
+    
     let mut last_ui_update = std::time::Instant::now();
     let min_ui_update_interval = std::time::Duration::from_secs(1);
     
@@ -40,6 +44,8 @@ pub async fn save_metrics_with_updates(
             metrics_data.mouse_distance_mi,
             metrics_data.scroll_steps,
         ).await {
+            log::debug!("Successfully saved metrics to local database");
+            
             if let Some(supabase_client) = &supabase {
                 let supabase_metrics = supabase::Metrics {
                     id: None,
@@ -52,9 +58,14 @@ pub async fn save_metrics_with_updates(
                     device_id: device_id.clone(),
                 };
 
-                if let Err(e) = supabase_client.insert_metrics(&supabase_metrics).await {
+                log::debug!("Attempting to save metrics to Supabase: {:?}", supabase_metrics);
+                if let Err(e) = supabase_client.upsert_metrics(&supabase_metrics).await {
                     log::error!("Failed to save metrics to Supabase: {}", e);
+                } else {
+                    log::debug!("Successfully saved metrics to Supabase");
                 }
+            } else {
+                log::debug!("Supabase client not configured, skipping remote save");
             }
 
             let now = std::time::Instant::now();
@@ -89,11 +100,33 @@ pub async fn save_metrics_with_updates(
     }
 }
 
+
+fn get_or_create_device_id() -> String {
+    let app_dirs = directories::ProjectDirs::from("com", "kweeb-logger", "logger")
+        .expect("Failed to get project directories");
+    let data_dir = app_dirs.data_dir();
+    let device_id_path = data_dir.join("device_id");
+
+    if let Ok(existing_id) = std::fs::read_to_string(&device_id_path) {
+        existing_id
+    } else {
+        let new_id = uuid::Uuid::new_v4().to_string();
+        std::fs::create_dir_all(data_dir).expect("Failed to create data directory");
+        std::fs::write(device_id_path, &new_id).expect("Failed to save device ID");
+        new_id
+    }
+}
+
 pub async fn collect_metrics(state: Arc<AppState>) {
     let device_state = DeviceState::new();
     let mut last_mouse = device_state.get_mouse();
     let mut last_keys = device_state.get_keys();
     let mut scroll_tracker = ScrollTracker::new();
+
+    let mut previously_pressed: HashSet<bool> = last_mouse.button_pressed
+        .iter()
+        .copied()
+        .collect();
 
     loop {
         tokio::time::sleep(Duration::from_millis(100)).await;
@@ -110,14 +143,19 @@ pub async fn collect_metrics(state: Arc<AppState>) {
             &state.monitors.lock().await,
         ).unwrap_or(0.0);
 
+        let mut click_count = 0;
+        for (prev, curr) in last_mouse.button_pressed.iter().zip(current_mouse.button_pressed.iter()) {
+            if !prev && *curr {
+                click_count += 1;
+            }
+        }
+
         if let Ok(mut metrics) = state.metrics.try_lock() {
             metrics.keypresses += current_keys.iter()
                 .filter(|k| !last_keys.contains(k))
                 .count() as i32;
 
-            if current_mouse.button_pressed.len() > last_mouse.button_pressed.len() {
-                metrics.mouse_clicks += 1;
-            }
+            metrics.mouse_clicks += click_count;
             metrics.mouse_distance_in += distance;
             metrics.mouse_distance_mi += distance / 63360.0;
             metrics.scroll_steps += scroll_delta;
@@ -128,9 +166,7 @@ pub async fn collect_metrics(state: Arc<AppState>) {
                 .filter(|k| !last_keys.contains(k))
                 .count() as i32;
 
-            if current_mouse.button_pressed.len() > last_mouse.button_pressed.len() {
-                total.total_mouse_clicks += 1;
-            }
+            total.total_mouse_clicks += click_count;
             total.total_scroll_steps += scroll_delta;
         }
 

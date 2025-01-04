@@ -1,6 +1,8 @@
 use std::sync::Arc;
+use std::env;
 use tokio::runtime::Runtime;
 use anyhow::Result;
+use dotenv::dotenv;
 
 mod app;
 mod config;
@@ -21,12 +23,15 @@ use crate::supabase::SupabaseClient;
 
 
 fn main() -> Result<()> {
+    dotenv().ok();
     env_logger::init();
     log::info!("Starting keyboard logger...");
 
     let config = Config::load()?;
     let rt = Runtime::new()?;
 
+    log::info!("SUPABASE_URL: {}", env::var("SUPABASE_URL").unwrap_or_else(|_| "not set".to_string()));
+    log::info!("SUPABASE_ANON_KEY: {}", env::var("SUPABASE_ANON_KEY").map(|k| "is set".to_string()).unwrap_or_else(|_| "not set".to_string()));
 
     let state = rt.block_on(AppState::initialize())?;
 

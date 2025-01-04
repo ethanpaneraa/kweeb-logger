@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use serde::Deserialize;
 use std::path::PathBuf;
 use directories::ProjectDirs;
+use std::env;
 
 #[allow(dead_code)]
 #[derive(Debug, Deserialize, Default)]
@@ -29,7 +30,8 @@ pub struct SupabaseConfig {
 
 impl Config {
     pub fn load() -> Result<Self> {
-        if let Some(config_path) = Self::config_path() {
+        // Try to load from file first
+        let mut config = if let Some(config_path) = Self::config_path() {
             if config_path.exists() {
                 let config_str = std::fs::read_to_string(&config_path)
                     .context("Failed to read config file")?;
@@ -37,22 +39,27 @@ impl Config {
                 let config: Config = serde_yaml::from_str(&config_str)
                     .context("Failed to parse config file")?;
                 
-                return Ok(config);
+                config
+        } else {
+                Config::default()
             }
+        } else {
+            Config::default()
+        };
+
+        // Check environment variables and override config if they exist
+        if let Ok(url) = env::var("SUPABASE_URL") {
+            config.supabase.url = Some(url);
+            config.supabase.enabled = true;
         }
 
-        Ok(Config {
-            database: DBConfig {
-                db_type: "sqlite".to_string(),
-                url: None,
-                filepath: None,
-            },
-            supabase: SupabaseConfig {
-                enabled: false,
-                url: None,
-                api_key: None,
-            },
-        })
+        if let Ok(api_key) = env::var("SUPABASE_ANON_KEY") {
+            config.supabase.api_key = Some(api_key);
+            config.supabase.enabled = true;
+        }
+
+        log::debug!("Loaded config: {:?}", config);
+        Ok(config)
     }
 
     fn config_path() -> Option<PathBuf> {
